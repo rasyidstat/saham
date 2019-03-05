@@ -1,0 +1,54 @@
+---
+title: "Eksplorasi Data Saham"
+output: markdowntemplates::hrbrmrkdn
+---
+```{r include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE, warning = FALSE, echo = TRUE, fig.retina = 2, collapse = TRUE
+)
+knitr::knit_hooks$set(chunk = markdowntemplates:::chunk_hook_html) # DO NOT DELETE - NECESSARY FOR PRISM
+knitr::knit_hooks$set(optipng = knitr::hook_optipng) # DELETE ONLY IF YOU DON'T WANT COMPRESSION
+knitr::knit_hooks$set(pngquant = knitr::hook_pngquant) # DELETE ONLY IF YOU DON'T WANT COMPRESSION
+library(firasans)
+library(hrbrthemes)
+library(tidyverse)
+library(tidyquant)  
+```
+
+Istilah-istilah dalam pasar modal
+
+* Bearish: pergerakan harga saham dalam jangka waktu tertentu yang cenderung menurun/downtrend
+* Bullish: pergerakan harga saham dalam jangka waktu tertentu yang cenderung meningkat/uptrend 
+* Closing price: harga penutupan dari suatu harga saham di bursa
+* Earning Per Share (EPS): laba bersih per saham perusahaan
+
+```{r persiapan-data}
+# mengambil saham telkom, bca, unilever dan gudang garam
+if (file.exists("data/saham_top_20080101_20181231.rds")) {
+  ptf <- read_rds("data/saham_top_20080101_20181231.rds")
+} else {
+  ptf <- tibble(stocks = c("BBCA.JK", "TLKM.JK", "UNVR.JK", "GGRM.JK"),
+       industry = c("Perbankan", "Telekomunikasi", "FMCG", "Rokok")) %>% 
+  tq_get(get = "stock.prices", from = "2008-01-01", to = "2018-12-31")
+  write_rds(ptf, "data/saham_top_20080101_20181231.rds")
+}
+
+c("BBCA.JK", "TLKM.JK") %>%
+    tq_get(get = c("stock.prices", "dividends")) -> test
+```
+
+```{r visualisasi-data}
+ptf %>% 
+  mutate(stocks = gsub("\\.JK", "", stocks)) %>% 
+  group_by(stocks) %>% 
+  # mutate(price = (close - min(close, na.rm=TRUE)) / (max(close, na.rm=TRUE) - min(close, na.rm=TRUE))) %>% 
+  mutate(price = close) %>% 
+  ggplot(aes(date, price, color = stocks)) +
+  geom_line() +
+  theme_ipsum_rc(grid = "XY") +
+  facet_wrap(.~stocks, scales = "free") +
+  scale_y_comma() +
+  guides(color = FALSE) +
+  labs(x = "NULL", y = "Harga")
+```
+
