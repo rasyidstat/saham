@@ -1,10 +1,13 @@
 ---
 title: "Eksplorasi Data Saham"
-output: markdowntemplates::hrbrmrkdn
+author: Rasyid Ridha
+output: 
+  markdowntemplates::hrbrmrkdn:
+    toc: true
 ---
 ```{r include=FALSE, message=FALSE, warning=FALSE}
 knitr::opts_chunk$set(
-  message = FALSE, warning = FALSE, echo = TRUE, fig.retina = 2, collapse = TRUE
+  message = FALSE, warning = FALSE, echo = TRUE, fig.retina = 2, collapse = TRUE, fig.align = "center"
 )
 knitr::knit_hooks$set(chunk = markdowntemplates:::chunk_hook_html) # DO NOT DELETE - NECESSARY FOR PRISM
 knitr::knit_hooks$set(optipng = knitr::hook_optipng) # DELETE ONLY IF YOU DON'T WANT COMPRESSION
@@ -13,32 +16,113 @@ library(firasans)
 library(hrbrthemes)
 library(tidyverse)
 library(tidyquant)  
+library(liburrr)
 ```
 
-Istilah-istilah dalam pasar modal
+## Pembukaan
+
+Sejak tahun 2012 saat pertama kali saya membuka rekening bank, saya menyimpan tabungan di bank sehingga tergerus dengan kencangnya arus inflasi. Dari awal saya mendapatkan penghasilan, yaitu tahun 2016, saya sebaiknya menerapkan strategi finansial yang tepat untuk menjaga *net worth* saya agar tidak tergerus inflasi. Baru-baru ini, saya mulai melek finansial dan mencoba untuk mempelajari pasar modal agar setidaknya bisa menahan laju inflasi. 
+
+Terlebih dahulu, kita akan mengambil data inflasi tahunan Indonesia dari tahun 2008 hingga 2018.
+
+```{r}
+if (file.exists("data/inflasi_2008_2018.rds")) {
+  infl <- read_rds("data/inflasi_2008_2018.rds")
+} else {
+  infl <- tq_get("IDNCPIALLAINMEI", "economic.data", from = "2008-01-01", to = "2019-12-31")
+  write_rds(infl, "data/inflasi_2008_2018.rds")
+}
+```
+
+Berikut ini data inflasi dari tahun 2009 hingga 2018 dengan laju keseluruhan sebesar `r scales::percent((infl$price[11]-infl$price[1])/infl$price[1])`. Saat pertama kali saya membuka rekening di tahun 2012, 7 tahun yang lalu, laju keseluruhan sebesar `r scales::percent((infl$price[11]-infl$price[5])/infl$price[5])`. Apabila saya menabung 100 juta, uang saya melemah dan memiliki nilai sebesar `r 100 - (infl$price[11]-infl$price[5])/infl$price[5]*100` juta saja jika ditarik ke tahun tersebut.
+
+```{r}
+infl %>% 
+  mutate(growth = (price - lag(price)) / lag(price)) %>% 
+  filter(!is.na(growth)) %>% 
+  ggplot(aes(date, growth)) +
+  geom_line() +
+  geom_point() +
+  theme_ipsum_rc(grid = "Y") +
+  labs(x = NULL, y = "Laju Inflasi",
+       title = "Laju Inflasi Indonesia 2009-2018",
+       caption = "Source: https://fred.stlouisfed.org/series/IDNCPIALLMINMEI") +
+  scale_y_percent(limits = c(0,0.08)) +
+  scale_x_date(date_breaks = "year", date_labels = "%Y") +
+  ggrepel::geom_text_repel(aes(label = scales::percent(growth)),
+                           family = "Roboto Condensed")
+```
+
+Beberapa istilah-istilah dalam pasar modal yang mungkin perlu saya garisbawahi adalah:
 
 * Bearish: pergerakan harga saham dalam jangka waktu tertentu yang cenderung menurun/downtrend
 * Bullish: pergerakan harga saham dalam jangka waktu tertentu yang cenderung meningkat/uptrend 
 * Closing price: harga penutupan dari suatu harga saham di bursa
 * Earning Per Share (EPS): laba bersih per saham perusahaan
 
+Referensi untuk pemula:
+
+* Nabung Saham 2019 ([Part 1](https://www.youtube.com/watch?v=93OqbLazMzg), [Part 2](https://www.youtube.com/watch?v=6Z7N24a_nLo), [Lainnya](https://www.youtube.com/watch?v=lJIDJEXzo34&list=PLjPXuypTt-5uRS46yD3qyIgcZCxNZk1cZ))
+
+    Kriteria saham untuk investasi jangka panjang (5-10 tahun): ROE >15%, kapitalisasi pasar >20T, sektor defensif (makanan, gaya hidup, perbankan, telekomunikasi). Saham-saham yang memenuhi kriteria berdasarkan tautan tersebut: GGRM, BBCA, ICBP, BBNI, BBRI, MYOR, JPFA, ACES. Pembelian awal bulan dan akhir bulan, penjualan ketika MA100 crossing ke bawah MA200.
+
+## Persiapan Data
+
 ```{r persiapan-data}
 # mengambil saham telkom, bca, unilever dan gudang garam
 if (file.exists("data/saham_top_20080101_20181231.rds")) {
   ptf <- read_rds("data/saham_top_20080101_20181231.rds")
 } else {
-  ptf <- tibble(stocks = c("BBCA.JK", "TLKM.JK", "UNVR.JK", "GGRM.JK"),
-       industry = c("Perbankan", "Telekomunikasi", "FMCG", "Rokok")) %>% 
-  tq_get(get = "stock.prices", from = "2008-01-01", to = "2018-12-31")
+  ptf <- tibble(stocks = c("BBCA.JK", "TLKM.JK", "UNVR.JK", "GGRM.JK", "ICBP.JK", 
+                           "BBNI.JK", "BBRI.JK", "MYOR.JK", "JPFA.JK", "ACES.JK"),
+       industry = c("Perbankan", "Telekomunikasi", "Makanan", "Rokok", "Makanan",
+                    "Perbankan", "Perbankan", "Makanan", "Makanan", "Lainnya")) %>% 
+  tq_get(get = c("stock.prices", "dividends"), from = "2008-01-01", to = "2018-12-31")
   write_rds(ptf, "data/saham_top_20080101_20181231.rds")
 }
 
-c("BBCA.JK", "TLKM.JK") %>%
-    tq_get(get = c("stock.prices", "dividends")) -> test
+ptf <- ptf %>% 
+  bind_cols(ptf %>% 
+              select(-dividends) %>% 
+              unnest() %>%
+              filter(date %in% c(ymd(20080102), ymd(20180101))) %>% 
+              group_by(stocks) %>% 
+              mutate(price = ifelse(date == ymd(20080102), high, low),
+                     growth = (price - lag(price)) / lag(price)) %>% 
+              filter(!is.na(growth)) %>% 
+              ungroup() %>% 
+              select(growth)) %>% 
+  left_join(ptf %>% 
+              select(-dividends) %>% 
+              unnest() %>% 
+              # group_by(stocks, fd = floor_date(date, "month")) %>% 
+              group_by(stocks, year = year(date)) %>% 
+              summarise(price = mean(close, na.rm = TRUE)) %>% 
+              ungroup() %>% 
+              group_by(stocks) %>% 
+              mutate(growth = (price - lag(price)) / lag(price)) %>% 
+              group_by(stocks) %>% 
+              summarise(growth_yearly_avg = mean(growth, na.rm = TRUE)))
 ```
 
-```{r visualisasi-data}
+```{r eval=FALSE, include=FALSE}
+if (file.exists("data/saham_med_20080101_20181231.rds")) {
+  ptg <- read_rds("data/saham_med_20080101_20181231.rds")
+} else {
+  ptg <- tibble(stocks = c("WIKA.JK", "APLN.JK", "UNTR.JK", "ISAT.JK", "FREN.JK", "LPPF.JK")) %>% 
+  tq_get(get = c("stock.prices", "dividends"), from = "2008-01-01", to = "2018-12-31")
+  write_rds(ptf, "data/saham_med_20080101_20181231.rds")
+}
+```
+
+
+## Visualisasi Data
+
+```{r visualisasi-data, fig.width=10, fig.height=10}
 ptf %>% 
+  mutate(stocks = paste0(stocks, " (Avg. YoY: ", scales::percent(growth_yearly_avg), ")")) %>% 
+  select(-dividends) %>% 
+  unnest() %>% 
   mutate(stocks = gsub("\\.JK", "", stocks)) %>% 
   group_by(stocks) %>% 
   # mutate(price = (close - min(close, na.rm=TRUE)) / (max(close, na.rm=TRUE) - min(close, na.rm=TRUE))) %>% 
@@ -46,9 +130,113 @@ ptf %>%
   ggplot(aes(date, price, color = stocks)) +
   geom_line() +
   theme_ipsum_rc(grid = "XY") +
-  facet_wrap(.~stocks, scales = "free") +
+  facet_wrap(.~stocks, scales = "free", ncol = 3) +
   scale_y_comma() +
   guides(color = FALSE) +
-  labs(x = "NULL", y = "Harga")
+  labs(x = NULL, y = "Harga")
 ```
 
+```{r v2, eval=FALSE, include=FALSE}
+ptg %>% 
+  select(-dividends) %>% 
+  unnest() %>% 
+  mutate(stocks = gsub("\\.JK", "", stocks)) %>% 
+  group_by(stocks) %>% 
+  # mutate(price = (close - min(close, na.rm=TRUE)) / (max(close, na.rm=TRUE) - min(close, na.rm=TRUE))) %>% 
+  mutate(price = close) %>% 
+  ggplot(aes(date, price, color = stocks)) +
+  geom_line() +
+  theme_ipsum_rc(grid = "XY") +
+  facet_wrap(.~stocks, scales = "free", ncol = 3) +
+  scale_y_comma() +
+  guides(color = FALSE) +
+  labs(x = NULL, y = "Harga")
+```
+
+## Simulasi DCA
+
+```{r}
+ptf_sell <- ptf %>% 
+  select(stocks, industry, stock.prices) %>% 
+  unnest() %>% 
+  group_by(stocks) %>% 
+  filter(date == max(date)) %>% 
+  select(stocks, price = low) %>% 
+  ungroup()
+ptf_buy_dca <- ptf %>% 
+  select(stocks, industry, stock.prices) %>% 
+  unnest() %>% 
+  mutate(my = format(date, "%Y%m"),
+        y = year(date)) %>%
+  group_by(stocks, my) %>% 
+  filter(date == min(date)) %>% 
+  mutate(price = high) %>% 
+  filter(stocks %in% c("MYOR.JK", "ICBP.JK", "TLKM.JK", "ACES.JK"),
+         y >= 2016) %>% 
+  select(stocks, industry, date, price) %>% 
+  arrange(my, stocks) %>% 
+  mutate(lot_min = 100,
+         budget = 5000000) %>% 
+  mutate(price_100 = lot_min * price) %>% 
+  group_by(my) %>% 
+  mutate(price_all = sum(price),
+         price_all_100 = sum(price_100),
+         budget_rest = budget - price_all_100,
+         lot_add = round(budget_rest %/% price_all)) %>% 
+  ungroup() %>% 
+  mutate(lot_sum = lot_min + lot_add,
+         price_sum = lot_sum * price) 
+ptf_buy_dca_smr <- ptf_buy_dca %>% 
+  group_by(stocks) %>% 
+  summarise(lot_sum = sum(lot_sum),
+            price_sum = sum(price_sum))
+ptf_buy_dca_smr %>% 
+  inner_join(ptf_sell) %>% 
+  mutate(price_sell = price * lot_sum,
+         growth = (price_sell - price_sum) / price_sum) %>% 
+  bind_rows(ptf_buy_dca_smr %>% 
+              inner_join(ptf_sell) %>% 
+              mutate(stocks = "ALL",
+                     price_sell = price * lot_sum) %>% 
+              group_by(stocks) %>% 
+              summarise_if(is.numeric, funs(sum)) %>% 
+              ungroup() %>% 
+              mutate(growth = (price_sell - price_sum) / price_sum)) %>% 
+  mutate(price_sum_real = price_sum * (1+0.20*0.01),
+         price_sell_real = price_sell * (1-0.20*0.01),
+         growth_real = (price_sell_real - price_sum_real) / price_sum_real)
+```
+
+## The Effect
+
+```{r}
+ptf %>% 
+  select(stocks, industry, stock.prices) %>% 
+  unnest() %>% 
+  select(stocks, industry, date, price = close) %>% 
+  mutate(week = week(date), year = year(date), day = wday(date, label = TRUE, week_start = 1)) %>% 
+  group_by(stocks, industry, week, year) %>% 
+  mutate(price_norm = price / sum(price)) %>% 
+  ungroup() %>% 
+  # ggplot(aes(day, price_norm)) +
+  # geom_boxplot()
+  group_by(day) %>%
+  summarise(price_norm_avg = mean(price_norm, na.rm = TRUE),
+            price_norm_median = median(price_norm, na.rm = TRUE),
+            price_norm_sd = sd(price_norm, na.rm = TRUE))
+```
+
+```{r eval=FALSE, include=FALSE}
+ptf %>% 
+  select(stocks, industry, stock.prices) %>% 
+  unnest() %>% 
+  select(stocks, industry, date, price = close) %>% 
+  group_by(stocks, month = month(date)) %>% 
+  mutate(price_norm = scales::rescale(price, to = c(0,1))) %>% 
+  ungroup() %>% 
+  group_by(month = month(date)) %>% 
+  summarise(n = n(), 
+            price_norm_avg = mean(price_norm, na.rm = TRUE),
+            price_norm_median = median(price_norm, na.rm = TRUE),
+            price_norm_sd = sd(price_norm, na.rm = TRUE))
+```
