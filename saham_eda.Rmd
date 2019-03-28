@@ -81,6 +81,7 @@ if (file.exists("data/saham_top_20080101_20181231.rds")) {
   write_rds(ptf, "data/saham_top_20080101_20181231.rds")
 }
 
+# GROWTH AVG
 ptf <- ptf %>% 
   bind_cols(ptf %>% 
               select(-dividends) %>% 
@@ -88,10 +89,11 @@ ptf <- ptf %>%
               filter(date %in% c(ymd(20080102), ymd(20180101))) %>% 
               group_by(stocks) %>% 
               mutate(price = ifelse(date == ymd(20080102), high, low),
-                     growth = (price - lag(price)) / lag(price)) %>% 
+                     growth = (price - lag(price)) / lag(price),
+                     growth_cagr = (price/lag(price))^(1 / (-year(lag(date))+year(date)+1) ) - 1 ) %>% 
               filter(!is.na(growth)) %>% 
               ungroup() %>% 
-              select(growth)) %>% 
+              select(growth, growth_cagr)) %>% 
   left_join(ptf %>% 
               select(-dividends) %>% 
               unnest() %>% 
@@ -120,7 +122,7 @@ if (file.exists("data/saham_med_20080101_20181231.rds")) {
 
 ```{r visualisasi-data, fig.width=10, fig.height=10}
 ptf %>% 
-  mutate(stocks = paste0(stocks, " (Avg. YoY: ", scales::percent(growth_yearly_avg), ")")) %>% 
+  mutate(stocks = paste0(stocks, " (CAGR: ", scales::percent(growth_cagr), ")")) %>% 
   select(-dividends) %>% 
   unnest() %>% 
   mutate(stocks = gsub("\\.JK", "", stocks)) %>% 
@@ -156,6 +158,7 @@ ptg %>%
 ## Simulasi DCA
 
 ```{r}
+year_ct <- 2010
 ptf_sell <- ptf %>% 
   select(stocks, industry, stock.prices) %>% 
   unnest() %>% 
@@ -172,11 +175,11 @@ ptf_buy_dca <- ptf %>%
   filter(date == min(date)) %>% 
   mutate(price = high) %>% 
   filter(stocks %in% c("MYOR.JK", "ICBP.JK", "TLKM.JK", "ACES.JK"),
-         y >= 2016) %>% 
+         y >= year_ct) %>% 
   select(stocks, industry, date, price) %>% 
   arrange(my, stocks) %>% 
   mutate(lot_min = 100,
-         budget = 5000000) %>% 
+         budget = 4000000) %>% 
   mutate(price_100 = lot_min * price) %>% 
   group_by(my) %>% 
   mutate(price_all = sum(price),
@@ -204,7 +207,8 @@ ptf_buy_dca_smr %>%
               mutate(growth = (price_sell - price_sum) / price_sum)) %>% 
   mutate(price_sum_real = price_sum * (1+0.20*0.01),
          price_sell_real = price_sell * (1-0.20*0.01),
-         growth_real = (price_sell_real - price_sum_real) / price_sum_real)
+         growth_real = (price_sell_real - price_sum_real) / price_sum_real,
+         growth_real_cagr = (price_sell_real / price_sum_real)^(1/(2018-year_ct+1)) - 1  )
 ```
 
 ## The Effect
