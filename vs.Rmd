@@ -1,0 +1,156 @@
+---
+title: "Saham vs Emas vs Gaji vs Rumah vs Inflasi"
+author: Rasyid Ridha
+output: 
+  markdowntemplates::hrbrmrkdn:
+    toc: true
+---
+```{r include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE, warning = FALSE, echo = TRUE, fig.retina = 2, collapse = TRUE, fig.align = "center"
+)
+knitr::knit_hooks$set(chunk = markdowntemplates:::chunk_hook_html) # DO NOT DELETE - NECESSARY FOR PRISM
+knitr::knit_hooks$set(optipng = knitr::hook_optipng) # DELETE ONLY IF YOU DON'T WANT COMPRESSION
+knitr::knit_hooks$set(pngquant = knitr::hook_pngquant) # DELETE ONLY IF YOU DON'T WANT COMPRESSION
+library(firasans)
+library(hrbrthemes)
+library(tidyverse)
+library(tidyquant)  
+library(liburrr)
+library(mrsq)
+```
+
+Data yang digunakan
+
+1. Saham / IHSG ([link](https://finance.yahoo.com/quote/%5EJKSE/history/))
+2. Harga Emas 
+3. Gaji / UMR ([link](https://www.bps.go.id/linkTableDinamis/view/id/917/Umr-di))
+4. Harga Rumah
+   - Indeks Survei Harga Properti Residensial  ([link](https://www.bi.go.id/id/publikasi/survei/harga-properti-primer/Default.aspx))
+   - Indeks Rumah.com ([link]())
+   - Indeks 99.co ([link](https://www.99.co/id/hpi))
+   - Indeks BTN ([link](https://www.btnproperti.co.id/blog/kategori/btn-housing-index-11.html))
+5. Inflasi
+
+```{r persiapan-data}
+up <- read.csv("data/umr_provinsi.csv", sep = ";", stringsAsFactors = FALSE) %>% 
+  filter(nama_item_vertical_variabel == "INDONESIA") %>% 
+  transmute(tahun = nama_tahun, index_real = as.numeric(data_content)) %>% 
+  mutate(growth = index_real / lag(index_real) - 1)
+ir <- read.csv("data/indeks_rumahcom.csv", sep = "\t") 
+# indeks_rumah_bi <- read.csv("data/")
+uj <- read.csv("data/umr_jakarta.csv", sep = " ")
+jkse <- read.csv("data/^JKSE.csv", stringsAsFactors = FALSE) %>% 
+  mutate(Date = ymd(Date),
+         year = year(Date)) %>% 
+  filter(!is.na(Close), Close != "null") %>% 
+  group_by(year) %>% 
+  filter(row_number() == 1) %>% 
+  ungroup() %>% 
+  transmute(year, index = as.numeric(Close)) %>% 
+  mutate(growth = index / lag(index) - 1) %>% 
+  filter(year >= 2015) %>% 
+  mutate(index = index / 5242.8 * 100)
+
+# clean
+ir <- ir %>% 
+  mutate(q = as.yearqtr(time, format = "Q%q %Y"),
+         dt = as.Date(q),
+         growth = index / lag(index) - 1) 
+ir_yearly <- ir %>% 
+  filter(month(dt) == 1)
+
+# start from 100
+uj <- uj %>% 
+  arrange(tahun) %>% 
+  mutate(growth = umr_jakarta / lag(umr_jakarta) - 1) %>% 
+  mutate(index = 100,
+         growth_t = growth + 1) %>% 
+  group_by(cat = case_when(tahun == 2015 ~ "B. 2015",
+                           tahun < 2015 ~ "A. <2015",
+                           tahun > 2015 ~ "C. >2015")) %>% 
+  mutate(growth_acc = case_when(tahun == 2015 ~ 1,
+                                tahun < 2015 ~ NA_real_,
+                                tahun > 2015 ~ cumprod(growth_t))) %>% 
+  ungroup() %>% 
+  arrange(desc(tahun)) %>% 
+  mutate(growth_t_lag = lag(growth_t)) %>% 
+  group_by(cat) %>% 
+  mutate(growth_acc = ifelse(tahun >= 2015, growth_acc, cumprod(1/growth_t_lag) )) %>% 
+  ungroup() %>% 
+  mutate(index = index * growth_acc )
+```
+
+```{r}
+ir_yearly %>% 
+  mutate(tahun = year(dt)) %>% 
+  select(tahun, index) %>% 
+  mutate(type = "IR") %>% 
+  bind_rows(uj %>% 
+              filter(tahun >= 2015) %>% 
+              select(tahun, index) %>% 
+              mutate(type = "UJ")) %>% 
+  bind_rows(jkse %>% 
+              select(tahun = year, index) %>% 
+              mutate(type = "JKSE")) %>% 
+  ggplot(aes(tahun, index, color = type)) +
+  geom_line() +
+  theme_nunito() +
+  scale_color_ipsum()
+```
+
+```{r visualisasi-data}
+# movement
+indeks_rumah %>% 
+  ggplot(aes(q, index)) +
+  geom_line() +
+  geom_point(size = 0.5) +
+  labs(x = "Quarter",
+       y = "Index") +
+  theme_ipsum_ps(grid = "Y") +
+  scale_x_yearqtr(breaks = indeks_rumah$q,
+                  format = "Q%q\n'%y")
+
+# growth
+indeks_rumah %>% 
+  ggplot(aes(q, growth, fill = growth > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Quarter",
+       y = "Growth") +
+  theme_ipsum_ps(grid = "Y") +
+  geom_text(data = indeks_rumah %>% 
+              filter(growth > 0),
+            aes(label = scales::percent(growth)),
+            family = "IBMPlexSans",
+            size = 2,
+            vjust = 2) +
+  geom_text(data = indeks_rumah %>% 
+              filter(growth < 0),
+            aes(label = scales::percent(growth)),
+            family = "IBMPlexSans",
+            size = 2,
+            vjust = -1) +
+  scale_fill_ipsum() +
+  scale_x_yearqtr(breaks = indeks_rumah$q,
+                  format = "Q%q\n'%y") +
+  scale_y_percent()
+```
+
+```{r}
+indeks_rumah %>% 
+  filter(dt <= ymd(20190101)) %>% 
+  arrange(desc(dt)) %>% 
+  mutate(r = row_number()) %>% 
+  arrange(dt) %>% 
+  mutate(r2 = row_number()) %>% 
+  filter(r == 1 | r2 == 1) %>% 
+  select(dt, index) %>% 
+  mutate(growth = index / lag(index) - 1,
+         growth_cagr = (index / lag(index))^(1 / (year(dt) - year(lag(dt)) ) ) - 1)
+```
+
+
+
+
+
+
